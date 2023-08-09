@@ -9,8 +9,8 @@ from pydantic import BaseModel
 
 
 class State(BaseModel):
-    robot_locs: set[tuple[int, int]]
-    holding_box: tuple
+    robot_loc: tuple[int, int]
+    holding_box: bool
     box_locs: set[tuple[int, int]]
     blocked_locs: set[tuple[int, int]]
     shelf_locs: set[tuple[int, int]]
@@ -19,7 +19,7 @@ class State(BaseModel):
     def __hash__(self):
         return hash(
             (
-                self.robot_locs,
+                self.robot_loc,
                 self.holding_box,
                 frozenset(self.box_locs),
                 frozenset(self.blocked_locs),
@@ -55,7 +55,7 @@ def main():
         COLS = int(file.readline().strip())
         ROWS = int(file.readline().strip())
 
-        robots = set()
+        robot = tuple()
         n = 0
         boxes = set()
         shelves = set()
@@ -65,7 +65,7 @@ def main():
             x = 0
             for char in line:
                 if char == "@":  # robot
-                    robots.add((x, y))
+                    robot = (x, y)
                     n += 1
                 elif char == "#":  # blocked cell (e.g. filled shelf)
                     blocked.add((x, y))
@@ -77,8 +77,8 @@ def main():
             y += 1
 
     init_state = State(
-        robot_locs=robots,
-        holding_box=(False,) * n,
+        robot_loc=robot,
+        holding_box=False,
         box_locs=boxes,
         blocked_locs=blocked,
         shelf_locs=shelves,
@@ -135,22 +135,22 @@ def astar(init_state):
 def expand(node: Node, closed: set) -> list[Node]:
     state = copy.deepcopy(node.state)
     children = []
-    x, y = state.robot_locs
+    x, y = state.robot_loc
 
     # Expand order: pickup, place, up, right, down, left
     directions = [(x, y - 1, "U"), (x + 1, y, "R"), (x, y + 1, "D"), (x - 1, y, "L")]
 
     # If box can be picked up, generate state with pickup action and skip movement actions
-    if state.robot_locs in state.box_locs and not state.holding_box:
-        state.box_locs.remove(state.robot_locs)
+    if state.robot_loc in state.box_locs and not state.holding_box:
+        state.box_locs.remove(state.robot_loc)
         state.holding_box = True
         child = Node(state=copy.deepcopy(state), depth=node.depth + 1, action="PU", parent=node)
         children.append(child)
         return children
     # If box can be placed, generate state with place action and skip movement actions
-    elif state.robot_locs in state.shelf_locs and state.holding_box:
-        state.shelf_locs.remove(state.robot_locs)
-        state.blocked_locs.add(state.robot_locs)
+    elif state.robot_loc in state.shelf_locs and state.holding_box:
+        state.shelf_locs.remove(state.robot_loc)
+        state.blocked_locs.add(state.robot_loc)
         state.holding_box = False
         child = Node(state=copy.deepcopy(state), depth=node.depth + 1, action="PL", parent=node)
         children.append(child)
@@ -166,7 +166,7 @@ def expand(node: Node, closed: set) -> list[Node]:
         ):
             continue
         new_state = State(
-            robot_locs=(loc[0], loc[1]),
+            robot_loc=(loc[0], loc[1]),
             holding_box=state.holding_box,
             box_locs=state.box_locs,
             blocked_locs=state.blocked_locs,
@@ -185,7 +185,7 @@ def expand(node: Node, closed: set) -> list[Node]:
 def heuristics(state: State) -> float:
     # Manhattan distance
     dsts = []
-    rbt = state.robot_locs
+    rbt = state.robot_loc
     # When not holding box
     if not state.holding_box:
         for box in state.box_locs:
