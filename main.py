@@ -174,7 +174,7 @@ def expand(node: Node, closed: set) -> list[Node]:
                 blocked_locs=state.blocked_locs,
                 shelf_locs=state.shelf_locs,
             )
-            new_state.robot_locs[i] = (x, y)
+            new_state.robot_locs[i] = (new_x, new_y)
 
             if new_state in closed:
                 continue
@@ -207,21 +207,23 @@ def heuristics(state: State) -> float:
 
 def print_path(node: Node, num_robots: int):
     for i in range(num_robots):
-        print(f"Robot {i+1}")
+        print(f"Robot {i+1}:")
         actions = []
+        temp_node = node
         while True:
-            if node.action == None:  # Stop when root node is reached
+            if temp_node.action == None:  # Stop when root node is reached
                 break
 
-            if node.robot == i:  # Only add action if it belongs to current robot
-                actions.append(node.action)
-            node = node.parent
+            if temp_node.robot == i:  # Only add action if it belongs to current robot
+                actions.append(temp_node.action)
+            temp_node = temp_node.parent
 
         if INLINE:
             print(*actions[::-1])
         else:
             for action in actions[::-1]:
                 print(action)
+        print()
 
 
 if __name__ == "__main__":
