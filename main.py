@@ -31,8 +31,7 @@ class State(BaseModel):
 class Node(BaseModel):
     depth: int
     priority: float = 0
-    action: str = None
-    robot: int = None
+    actions: list[str] = []
     state: State
     parent: "Node" = None
 
@@ -134,28 +133,25 @@ def astar(init_state: State):
 
 
 def expand(node: Node, closed: set) -> list[Node]:
-    state = copy.deepcopy(node.state)
-    children = []
+    state = node.state
 
+    # Generate all possible actions for each robot
+    actions: list = []
     for i, (x, y) in enumerate(state.robot_locs):
-        # Expand order: pickup, place, up, right, down, left
+        # Expand order: pickup/place, up, right, down, left
         directions: list[tuple[int, int, str]] = [(x, y - 1, "U"), (x + 1, y, "R"), (x, y + 1, "D"), (x - 1, y, "L")]
+        robot_actions: list[tuple[str, tuple]] = []
 
         # If box can be picked up, generate state with pickup action and skip movement actions
         if (x, y) in state.box_locs and not state.holding_boxes[i]:
-            state.box_locs.remove((x, y))
-            state.holding_boxes[i] = True
-            child = Node(state=copy.deepcopy(state), depth=node.depth + 1, action="PU", robot=i, parent=node)
-            children.append(child)
-            return children
+            robot_actions.append(("PU", (x, y)))
+            actions.append(robot_actions)
+            continue
         # If box can be placed, generate state with place action and skip movement actions
         elif (x, y) in state.shelf_locs and state.holding_boxes[i]:
-            state.shelf_locs.remove((x, y))
-            state.blocked_locs.add((x, y))
-            state.holding_boxes[i] = False
-            child = Node(state=copy.deepcopy(state), depth=node.depth + 1, action="PL", robot=i, parent=node)
-            children.append(child)
-            return children
+            robot_actions.append(("PL", (x, y)))
+            actions.append(robot_actions)
+            continue
 
         # Expand directions
         for new_x, new_y, action in directions:
@@ -167,22 +163,49 @@ def expand(node: Node, closed: set) -> list[Node]:
             ):
                 continue
 
-            new_state = State(
-                robot_locs=state.robot_locs,
-                holding_boxes=state.holding_boxes,
-                box_locs=state.box_locs,
-                blocked_locs=state.blocked_locs,
-                shelf_locs=state.shelf_locs,
-            )
-            new_state.robot_locs[i] = (new_x, new_y)
+            robot_actions.append((action, (new_x, new_y)))
 
-            if new_state in closed:
-                continue
+        actions.append(robot_actions)
 
-            child = Node(state=new_state, depth=node.depth + 1, action=action, robot=i, parent=node)
-            children.append(child)
+    # Generate nodes from all possible action combos
+    action_combos: list[list[tuple[str, tuple]]] = generate_action_combinations(len(state.robot_locs), [], actions)
+
+    children = []
+    for action_list in action_combos:
+        new_state = copy.deepcopy(state)
+        new_actions = []
+        for i, (action, location) in enumerate(action_list):
+            if action == "PU":  # pick up box
+                new_state.box_locs.remove(location)
+                new_state.holding_boxes[i] = True
+            elif action == "PL":  # place box
+                new_state.shelf_locs.remove(location)
+                new_state.blocked_locs.add(location)
+                new_state.holding_boxes[i] = False
+
+            new_state.robot_locs[i] = location
+            new_actions.append(action)
+
+        if new_state in closed or len(new_state.robot_locs) != len(set(new_state.robot_locs)):
+            # skip if new state already exists or if there are duplicates in robot locations (i.e. robots collide)
+            continue
+
+        child = Node(state=new_state, depth=node.depth + 1, actions=new_actions, parent=node)
+        children.append(child)
 
     return children
+
+
+def generate_action_combinations(remaining_robots: int, current_combination: list, actions: list[list[tuple]]):
+    if remaining_robots == 0:
+        return [current_combination]
+
+    combinations = []
+    for action in actions[len(actions) - remaining_robots]:
+        new_combination = current_combination + [action]
+        combinations.extend(generate_action_combinations(remaining_robots - 1, new_combination, actions))
+
+    return combinations
 
 
 def heuristics(state: State) -> float:
@@ -207,17 +230,18 @@ def heuristics(state: State) -> float:
 
 def print_path(node: Node, num_robots: int):
     for i in range(num_robots):
-        print(f"Robot {i+1}:")
         actions = []
+        init_loc = tuple()
         temp_node = node
         while True:
-            if temp_node.action == None:  # Stop when root node is reached
+            if len(temp_node.actions) == 0:  # Stop when root node is reached
+                init_loc = temp_node.state.robot_locs[i]
                 break
 
-            if temp_node.robot == i:  # Only add action if it belongs to current robot
-                actions.append(temp_node.action)
+            actions.append(temp_node.actions[i])
             temp_node = temp_node.parent
 
+        print(f"Robot {i+1} {init_loc}:")
         if INLINE:
             print(*actions[::-1])
         else:
