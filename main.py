@@ -1,7 +1,9 @@
 import copy
+import heapq
 import queue
 import sys
 import time
+from math import floor
 
 from pydantic import BaseModel
 
@@ -49,6 +51,18 @@ COLS, ROWS = (0, 0)
 
 
 def main():
+    # Parse arguments
+    try:
+        h = sys.argv[1]
+        w = float(sys.argv[2])
+    except IndexError:
+        print("Missing argument")
+        exit(2)
+
+    if h not in ["h0", "hman", "hman+"]:
+        print("Invalid heuristic")
+        exit(2)
+
     # Parse file input
     with sys.stdin as file:
         global COLS, ROWS
@@ -85,7 +99,7 @@ def main():
     )
 
     tstart = time.time()
-    astar(init_state)
+    astar(init_state, h, w)
     tend = time.time()
     if TIME:
         print(f"Algorithm completed in {tend - tstart} seconds")
@@ -94,7 +108,7 @@ def main():
 # ------ ALGORITHM ------
 
 
-def astar(init_state: State):
+def astar(init_state: State, h: str, w: float):
     init_node = Node(state=init_state, depth=0)
     open = queue.PriorityQueue()
     closed = set()
@@ -121,7 +135,7 @@ def astar(init_state: State):
             expanded += 1
             generated += len(children)
             for child in children:
-                priority = child.depth + heuristics(child.state)
+                priority = child.depth + w * heuristics(child.state, h)
                 child.priority = priority
                 open.put(child)
 
@@ -208,24 +222,54 @@ def generate_action_combinations(remaining_robots: int, current_combination: lis
     return combinations
 
 
-def heuristics(state: State) -> float:
-    # Manhattan distance
-    dsts = 0
-    for i, (x, y) in enumerate(state.robot_locs):
-        sub_dsts = []
-        # When not holding box
-        if not state.holding_boxes[i]:
-            for box in state.box_locs:
-                dst = abs(x - box[0]) + abs(y - box[1])
-                sub_dsts.append(dst)
-            dsts += min(sub_dsts) if len(sub_dsts) != 0 else 0
-        # When holding box
-        else:
-            for shelf in state.shelf_locs:
-                dst = abs(x - shelf[0]) + abs(y - shelf[1])
-                sub_dsts.append(dst)
-            dsts += min(sub_dsts) if len(sub_dsts) != 0 else 0
-    return dsts
+def heuristics(state: State, h: str) -> float:
+    match h:
+        case "h0":  # h(n) = 0
+            return 0
+        case "hman":  # Manhattan distance
+            dsts = 0
+            for i, (x, y) in enumerate(state.robot_locs):
+                sub_dsts = []
+                # When not holding box
+                if not state.holding_boxes[i]:
+                    for box in state.box_locs:
+                        dst = abs(x - box[0]) + abs(y - box[1])
+                        sub_dsts.append(dst)
+                    dsts += min(sub_dsts) if len(sub_dsts) != 0 else 0
+                # When holding box
+                else:
+                    for shelf in state.shelf_locs:
+                        dst = abs(x - shelf[0]) + abs(y - shelf[1])
+                        sub_dsts.append(dst)
+                    dsts += min(sub_dsts) if len(sub_dsts) != 0 else 0
+            return dsts
+        case "hman+":  # Manhattan distance & remaining boxes
+            total_distance = 0
+            distances: list[list[int]] = []
+            # Get distances for each robot
+            # Add array of distances to boxes to distances if not holding a box
+            # Otherwise just add to total distance
+            for i, (x, y) in enumerate(state.robot_locs):
+                sub_dsts = []
+                # When not holding box
+                if not state.holding_boxes[i]:
+                    for box in state.box_locs:
+                        dst = abs(x - box[0]) + abs(y - box[1])
+                        sub_dsts.append(dst)
+                    distances.append(sub_dsts if len(sub_dsts) != 0 else [0])
+                # When holding box
+                else:
+                    for shelf in state.shelf_locs:
+                        dst = abs(x - shelf[0]) + abs(y - shelf[1])
+                        sub_dsts.append(dst)
+                    total_distance += min(sub_dsts) if len(sub_dsts) != 0 else 0
+
+            # Get shortest distances to boxes for each robot, splitting boxes as evenly as possible
+            for dsts in distances:
+                n = floor(len(state.box_locs) / len(distances))
+                total_distance += sum(heapq.nsmallest(n, dsts))
+
+            return total_distance
 
 
 def print_path(node: Node, num_robots: int):
