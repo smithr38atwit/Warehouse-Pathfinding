@@ -139,6 +139,7 @@ def astar(init_state: State, h: str, w: float):
                 child.priority = priority
                 open.put(child)
 
+    print(f"Depth: {node.depth}")
     print(f"{generated} nodes generated")
     print(f"{expanded} nodes expanded")
 
